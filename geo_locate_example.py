@@ -1,3 +1,4 @@
+# Import relevant modules
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy import constants, optimize
@@ -6,11 +7,12 @@ import pickle
 import pandas as pd
 from scipy.optimize import LinearConstraint
 from scipy.optimize import minimize
-# Load the node config dictionary this contains information about the nodes
+
+# Load the node_config dictionary that contains information about the nodes
 # (receivers) position and name
 node_config = np.load("node_config_fixed.npy", allow_pickle=True).item()
 
-# Now load in waveforms
+# Load in waveforms
 waveforms = np.load("exported_waveforms.npy", allow_pickle=True)
 
 # For each waveform the following variables are available
@@ -31,60 +33,54 @@ waveforms = np.load("exported_waveforms.npy", allow_pickle=True)
 # The sampling resolution of LEELA is 9.142 us
 
 
-
+# Create a dictionary node_code with the key being the site and the value being the node code
 node_code = {}
 for key in node_config.keys():
     node_code[node_config[key]['Site']] = key
 
 
-
-'''
-This function finds the Theoretical Arrival Time Difference. This is done through calculating
-the distances between the guess and each node. distGA is the distance between the guess and 
-the reference node. distGBs is a list of all the distances between the guess and all other nodes.
-This is done using the geod function in pyproj which calculates distances between 2 points taking
-into account the geodisic lines of the earth (WGS84 being the best representation of the earth).
-Theoretical Arrival Time Difference is calculated using both distGA and distGB as well as the phase
-velocity (vp) which will be a little over the speed of light. The list TATD is outputted to be utilised
-in the RES function.
-'''
-
 def TATD(waveforms, guess):
-    dist_GBs = []
+    '''
+    Finds the Theoretical Arrival Time Difference for each node by calculating distance from a reference node 
+    to each node using pyproj's Geod function. Adds these TATDs to one list.
+    '''
+    
+    # Define the Geod function
     geod = Geod(ellps='WGS84')
+    
+    # Calculate the distance from the reference node to the event
     _, _, dist_GA = geod.inv(waveforms[0]['lon'], waveforms[0]['lat'], guess[0], guess[1])
 
+    # Open list of distances from non-reference nodes to event
+    dist_GBs = []
+    # Append the distances from non-reference nodes to event to dist_GBs
     for i in range(1, 7):
         _, _, dist_GB = geod.inv(waveforms[i]['lon'], waveforms[i]['lat'], guess[0], guess[1])
         dist_GBs.append(dist_GB)
-        # print(waveforms[x]['site_name'], waveforms[x]['lat'], waveforms[x]['lon'], dist_GB)
+    
+    # Create list of TATDs
     TATDs = []
 
+    # Define the phase velocity
     vp = 2.99792458e8 * 1.00425
-
+    
+    # Calculate the TATD for each node and append to TATDs
     for i in range(0, 6):
         TATD = abs(dist_GBs[i] / vp) - abs(dist_GA / vp)
         TATDs.append(TATD)
     return TATDs
 
 
-
-'''
-RES function takes in an intial guess of where the lightening point will be,
-the waveforms dictionary containing data necessary to find the TATD (see TATD
-function) and OATDs is the list of OATDs (see above). The guess will change after
-each iteration of the minimisation function is complete. The point of this
-fuction is to calculate the residual (res) of how close the guess is to the actual
-lightening strike location. The smaller res gets, the closer the guess is to the
-location of the lightening strike.
-'''
-
 def RES(guess, waveforms, OATDs):
-    # Finds TATDs
+    '''
+    Function to be minimised. Calculates the residual of how close the guess is 
+    to the actual lightning strike location.
+    '''
+    # Use TATD function to find TATDs
     TATDs = TATD(waveforms, guess)
-    # Finds variance
+    # Find variance
     vari = np.var(OATDs)
-    # determines N from amount of values in OATDs
+    # Determine N from amount of values in OATDs
     N = len(OATDs)
 
     # Calculate the value of RES
@@ -92,43 +88,37 @@ def RES(guess, waveforms, OATDs):
     for i in range(0, 5):
         sumATD = sumATD + (TATDs[i] - OATDs[i]) ** 2 / vari
     RES = np.sqrt((1 / (N - 2) * sumATD))
+    
+    # Print RES value
     print(RES)
+    
+    # Return RES value for each minimisation
     return RES
 
 
-'''
-This adds longitude and and latitude to the waveforms dictionary for ease to only need to pass 
-through one dictionary to all functions. A list is also defined to hold all observed arrival
-time differences. This is the time difference between our reference node (waveforms[0]) and 
-another arbitrary node. This is obviously doesn't vary so it makes sense to not attach this
-to a function. This reference node is consistent when calculating distances between 
-nodes as well as the theoretical arrival time difference.
-'''
+#Define the OATDs list
 OATDs = []
+
+# Add the latitude and longitude to the waveforms dictionary from node_config.
 for i in range(0,7):
     waveforms[i]['lat'] = node_config[node_code[waveforms[i]['site_name']]]['Position']['lat']
     waveforms[i]['lon'] = node_config[node_code[waveforms[i]['site_name']]]['Position']['lon']
+
+# Find the observed time difference by taking the value of the difference between the two timestamps.
 for i in range(1, 7):
     OATDs.append((waveforms[i]['timestamp'] - waveforms[0]['timestamp']).astype(float)/1e9)
+    
+# Print the OATDs
 for i in range(0, 6):
     print(OATDs[i])
 
 
-#Initalise guess in london
-'''
-guess = [0, 0]
-guess[0] = -0.118092 #longitude
-guess[1] = 51.509865 #latitude
-'''
+# Initalise guess in London (Long=-0.118092 , Lat=51.509865)
 guess = np.array([-0.118092, 51.509865])
-'''
-This calls the minimise function in scipy which will minimise RES function until RES is sufficenitly 
-small. Minimise allows the use of a variety of diiferent methods to minimise but we are using the Nelder-Mead
-method.
-'''
+
+# Call the minimise function from scipy, minimising the RES function until it is sufficiently small.
+# (Can change the method of minimisation)
 result = minimize(RES, guess, args=(waveforms, OATDs), method='Nelder-Mead')
 
-#blametest
-
+# Print the result
 print(result)
-
