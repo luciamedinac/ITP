@@ -115,7 +115,7 @@ for n in pf['num']:
     
     # Set parameter atds to be a dictionary with Watnall as the reference node
     atds = atddict(pf['long'][n],pf['lat'][n],'569218Q0B001D0029')
-    window_dt = np.timedelta64(1000, "ms")
+    window_dt = np.timedelta64(50, "ms")
     start_time = np.datetime64(str(pf['date'][n].date())+'T'+str(pf['start_time'][n]))
     end_time = np.datetime64(str(pf['date'][n].date())+'T'+str(pf['end_time'][n]))
     
